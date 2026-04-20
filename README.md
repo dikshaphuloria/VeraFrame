@@ -2,7 +2,7 @@
 
 > AI-powered video and image authenticity detector. Upload a video, image, or YouTube URL and VeraFrame analyzes frames, transitions, pixel-level manipulation, and metadata to determine if content is AI generated or edited.
 
-![VeraFrame](frontend/public/favicon.ico)
+![VeraFrame](frontend/app/favicon.ico)
 
 ---
 
