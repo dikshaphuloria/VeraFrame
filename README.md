@@ -89,6 +89,7 @@ veraframe/
     │   ├── page.tsx
     │   ├── globals.css
     │   ├── layout.tsx
+    │   ├── favicon.ico
     │   ├── components/
     │   │   ├── DropZone.tsx
     │   │   ├── ProgressBar.tsx
