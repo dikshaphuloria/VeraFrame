@@ -20,8 +20,8 @@ def get_video_duration(video_path: str) -> float:
     result = subprocess.run(command, capture_output=True, text=True)
     try:
         return float(result.stdout.strip())
-    except:
-        return 60  # fallback to 60s if detection fails
+    except ValueError:
+        return 60  # fallback to 60s if ffprobe output is unparseable
 
 
 def get_fps_for_duration(duration: float) -> float:

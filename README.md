@@ -28,7 +28,7 @@
 **Backend**
 - Python 3.12 + FastAPI
 - FFmpeg — smart frame extraction based on video duration
-- Google Gemini Vision (`gemini-2.5-flash-preview`) — frame + transition analysis
+- Google Gemini Vision (`gemini-3-flash-preview`) — frame + transition analysis
 - Pillow + NumPy — ELA (Error Level Analysis) for manipulation detection
 - yt-dlp — YouTube and URL video downloading
 - Server-Sent Events (SSE) — real-time progress streaming

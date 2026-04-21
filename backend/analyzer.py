@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import io
+import time
 import numpy as np
 from PIL import Image, ImageChops, ImageEnhance
 from google import genai
@@ -12,6 +13,39 @@ load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
+# ─── Gemini call defaults ──────────────────────────────────────────────────────
+_GEMINI_MODEL        = "gemini-3-flash-preview"
+_MAX_RETRIES         = 3
+_RETRY_BASE_DELAY    = 2.0   # seconds — doubles each retry
+
+
+# ─── Neutral fallback dicts ────────────────────────────────────────────────────
+# Returned when Gemini fails after all retries so the pipeline keeps running.
+
+def _neutral_frame_result() -> dict:
+    return {
+        "is_ai_generated": False,
+        "is_edited": False,
+        "confidence": 0,
+        "watermark_detected": False,
+        "artifacts_found": [],
+        "reasoning": "Analysis failed — treated as real to avoid false positives",
+        "metadata": None,
+        "ela": None,
+    }
+
+
+def _neutral_transition_result(frame_num: int) -> dict:
+    return {
+        "is_suspicious_transition": False,
+        "confidence": 0,
+        "transition_type": "normal",
+        "description": "Analysis failed — treated as normal transition",
+        "frame_pair": f"frame {frame_num} → frame {frame_num + 1}",
+    }
+
+
+# ─── Helpers ───────────────────────────────────────────────────────────────────
 
 def clean_json_response(raw_text: str) -> dict:
     """
@@ -23,6 +57,30 @@ def clean_json_response(raw_text: str) -> dict:
         return json.loads(match.group())
     raise ValueError(f"No JSON found in Gemini response: {raw_text[:200]}")
 
+
+def _call_gemini_with_retry(contents: list) -> str:
+    """
+    Call Gemini with exponential backoff retry.
+    Returns raw response text.
+    Raises RuntimeError after all retries exhausted.
+    """
+    last_error = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model=_GEMINI_MODEL,
+                contents=contents
+            )
+            return response.text
+        except Exception as e:
+            last_error = e
+            if attempt < _MAX_RETRIES - 1:
+                delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                time.sleep(delay)
+    raise RuntimeError(f"Gemini call failed after {_MAX_RETRIES} attempts: {last_error}")
+
+
+# ─── Forensic helpers ──────────────────────────────────────────────────────────
 
 def check_image_metadata(image_path: str) -> dict:
     """
@@ -54,8 +112,6 @@ def check_image_metadata(image_path: str) -> dict:
             has_gps = bool(exif_data.get(34853))
 
         is_edited = any(s in software for s in suspicious_software)
-
-        # no exif at all is suspicious for a "real" photo
         no_metadata = exif_data is None or len(exif_data) == 0
 
         return {
@@ -94,37 +150,29 @@ def error_level_analysis(image_path: str, quality: int = 90) -> dict:
     4. A uniform diff = untouched original
        A patchy diff with bright spots = edited regions
 
-    Returns a score 0-100 where higher = more likely edited/manipulated
+    NOTE: Only meaningful on the original uploaded file, not re-encoded
+    video frames. Caller is responsible for only passing original image paths.
+
+    Returns a score 0-100 where higher = more likely edited/manipulated.
+    Thresholds are owned by scorer.py — this function returns raw values only.
     """
     try:
         original = Image.open(image_path).convert("RGB")
 
-        # re-save at known quality level
         buffer = io.BytesIO()
         original.save(buffer, format="JPEG", quality=quality)
         buffer.seek(0)
         recompressed = Image.open(buffer).convert("RGB")
 
-        # pixel-by-pixel difference
         diff = ImageChops.difference(original, recompressed)
-
-        # amplify the differences so they're measurable
         enhanced = ImageEnhance.Brightness(diff).enhance(10)
-
-        # convert to numpy array for math
         diff_array = np.array(enhanced, dtype=np.float32)
 
-        # overall average brightness of diff
         mean_ela = float(diff_array.mean())
+        std_ela  = float(diff_array.std())
+        max_ela  = float(diff_array.max())
 
-        # standard deviation — high std = inconsistent editing (suspicious)
-        std_ela = float(diff_array.std())
-
-        # max brightness — very bright spots = heavily edited regions
-        max_ela = float(diff_array.max())
-
-        # normalize to 0-100 score
-        # empirically: untouched images score ~5-15, edited ~25-60, heavy edits 60+
+        # raw score — scorer.py owns the thresholds for "likely_edited" etc.
         ela_score = min(round(mean_ela * 1.5 + std_ela * 0.5, 1), 100)
 
         return {
@@ -132,8 +180,6 @@ def error_level_analysis(image_path: str, quality: int = 90) -> dict:
             "mean": round(mean_ela, 2),
             "std": round(std_ela, 2),
             "max": round(max_ela, 2),
-            "likely_edited": ela_score > 20,
-            "heavily_edited": ela_score > 40,
         }
     except Exception as e:
         return {
@@ -141,28 +187,37 @@ def error_level_analysis(image_path: str, quality: int = 90) -> dict:
             "mean": 0,
             "std": 0,
             "max": 0,
-            "likely_edited": False,
-            "heavily_edited": False,
             "error": str(e)
         }
 
 
+# ─── Per-frame analysis ────────────────────────────────────────────────────────
+
 def analyze_frame_with_gemini(image_data: str, image_path: str = None) -> dict:
     """
-    Send a single frame to Gemini Vision.
-    Also runs metadata + ELA checks if image_path provided.
-    Returns combined per-frame AI detection verdict.
+    Analyze a single frame for AI generation signals.
+
+    Returns a dict with two independent verdicts:
+      - is_ai_generated: Gemini vision detected AI generation artifacts
+      - is_edited:       forensic analysis (ELA / metadata) detected manipulation
+
+    These are intentionally separate. Editing ≠ AI generation.
+    scorer.py maps these to the correct verdict tier.
+
+    image_path should only be passed for original uploaded images, NOT for
+    re-encoded video frames (ELA on re-encoded frames produces meaningless scores).
     """
     image_bytes = base64.b64decode(image_data)
     image = Image.open(io.BytesIO(image_bytes))
 
-    # run metadata + ELA if we have the original file path
+    # ── Forensic checks on original file (images only, not video frames) ───────
     metadata = None
     ela = None
     if image_path:
         metadata = check_image_metadata(image_path)
         ela = error_level_analysis(image_path)
 
+    # ── Gemini vision analysis ─────────────────────────────────────────────────
     prompt = """
     You are an expert forensic analyst specializing in detecting AI-generated content.
     Analyze this image with EXTREME scrutiny BUT avoid false positives.
@@ -197,8 +252,8 @@ def analyze_frame_with_gemini(image_data: str, image_path: str = None) -> dict:
 
     GOLDEN RULE:
     Ask yourself — could this scene exist in real life and be filmed by a normal person?
-    If YES and the only issues are video quality → mark as REAL
-    If there is something PHYSICALLY IMPOSSIBLE regardless of quality → mark as AI
+    If YES and the only issues are video quality → mark as NOT AI generated
+    If there is something PHYSICALLY IMPOSSIBLE regardless of quality → mark as AI generated
 
     Respond ONLY with a JSON object in this exact format, no extra text:
     {
@@ -210,56 +265,62 @@ def analyze_frame_with_gemini(image_data: str, image_path: str = None) -> dict:
     }
     """
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=[prompt, image]
-    )
-
-    result = clean_json_response(response.text)
-
-    # inject metadata + ELA findings into result
-    if metadata or ela:
+    try:
+        raw = _call_gemini_with_retry([prompt, image])
+        result = clean_json_response(raw)
+    except Exception:
+        result = _neutral_frame_result()
         result["metadata"] = metadata
         result["ela"] = ela
+        return result
 
-        extra_artifacts = []
+    # ── Inject forensic signals as separate flags — do NOT touch is_ai_generated ──
+    # Editing evidence goes into is_edited + artifacts_found only.
+    # scorer.py decides how to weight editing vs AI generation in the final verdict.
 
-        # if photoshop/editing software detected in metadata
-        if metadata and metadata["is_edited"] and metadata["software_detected"]:
-            extra_artifacts.append(f"Editing software detected in metadata: {metadata['software_detected']}")
-            # boost confidence if editing software found
-            result["confidence"] = min(result["confidence"] + 20, 100)
+    is_edited = False
+    editing_artifacts = []
 
-        # if ELA shows heavy manipulation
-        if ela and ela["heavily_edited"]:
-            extra_artifacts.append(f"Heavy image manipulation detected via ELA (score: {ela['ela_score']})")
-            result["confidence"] = min(result["confidence"] + 15, 100)
-        elif ela and ela["likely_edited"]:
-            extra_artifacts.append(f"Possible image manipulation detected via ELA (score: {ela['ela_score']})")
-            result["confidence"] = min(result["confidence"] + 8, 100)
+    if metadata:
+        if metadata["is_edited"] and metadata["software_detected"]:
+            is_edited = True
+            editing_artifacts.append(
+                f"Editing software detected in metadata: {metadata['software_detected']}"
+            )
+        if metadata["no_metadata"] and not metadata["has_camera_metadata"]:
+            editing_artifacts.append(
+                "No camera metadata found — image may have been generated or stripped"
+            )
 
-        # if no camera metadata at all — mildly suspicious
-        if metadata and metadata["no_metadata"] and not metadata["has_camera_metadata"]:
-            extra_artifacts.append("No camera metadata found — image may have been generated or stripped")
+    if ela:
+        ela_score = ela["ela_score"]
+        # raw score passed to scorer; description added for artifact list
+        if ela_score > 55:
+            is_edited = True
+            editing_artifacts.append(
+                f"Heavy image manipulation detected via ELA (score: {ela_score})"
+            )
+        elif ela_score > 25:
+            is_edited = True
+            editing_artifacts.append(
+                f"Possible image manipulation detected via ELA (score: {ela_score})"
+            )
 
-        if extra_artifacts:
-            result["artifacts_found"].extend(extra_artifacts)
-            # if we found editing evidence, upgrade verdict if it was real
-            if not result["is_ai_generated"] and (
-                (metadata and metadata["is_edited"]) or
-                (ela and ela["heavily_edited"])
-            ):
-                result["is_ai_generated"] = True
-                result["reasoning"] = "Forensic analysis detected image manipulation even though visual content appears authentic"
+    result["is_edited"]       = is_edited
+    result["metadata"]        = metadata
+    result["ela"]             = ela
+    result["artifacts_found"] = result.get("artifacts_found", []) + editing_artifacts
 
     return result
 
 
+# ─── Transition analysis ───────────────────────────────────────────────────────
+
 def analyze_transition_with_gemini(frame1_data: str, frame2_data: str, frame_num: int) -> dict:
     """
-    Send two consecutive frames to Gemini.
-    Detects physically impossible transitions that reveal AI generation.
-    Focuses on object permanence, fluid dynamics, and physics consistency.
+    Analyze two consecutive frames for physically impossible transitions
+    that reveal AI generation. Focuses on object permanence, fluid dynamics,
+    and physics consistency within a continuous shot.
     """
     image1 = Image.open(io.BytesIO(base64.b64decode(frame1_data)))
     image2 = Image.open(io.BytesIO(base64.b64decode(frame2_data)))
@@ -308,11 +369,11 @@ def analyze_transition_with_gemini(frame1_data: str, frame2_data: str, frame_num
     }
     """
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=[prompt, image1, image2]
-    )
+    try:
+        raw = _call_gemini_with_retry([prompt, image1, image2])
+        result = clean_json_response(raw)
+    except Exception:
+        return _neutral_transition_result(frame_num)
 
-    result = clean_json_response(response.text)
     result["frame_pair"] = f"frame {frame_num} → frame {frame_num + 1}"
     return result
