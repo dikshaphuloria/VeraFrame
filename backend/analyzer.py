@@ -250,6 +250,19 @@ def analyze_frame_with_gemini(image_data: str, image_path: str = None) -> dict:
     - Grainy or noisy footage — real cameras produce sensor noise
     - Dark or unevenly lit scenes — normal in real environments
 
+    MANIPULATION AND EDITING SIGNALS:
+    - Areas that look unnaturally sharp or smooth compared to surrounding regions
+    — suggests a patch or clone was applied
+    - Halos or soft glowing edges around objects or people
+    — classic sign of cut-and-paste compositing
+    - Noise inconsistency — one region is grainy while adjacent region is
+    unnaturally clean — suggests two images merged together
+    - Color that doesn't match the ambient light — object looks like it was
+    photographed in different lighting and dropped into the scene
+    - Shadows missing under objects that should cast them
+    - Repeated textures — identical patterns in background (clone stamp)
+    - Over-sharpened edges on one subject while background is naturally soft
+
     GOLDEN RULE:
     Ask yourself — could this scene exist in real life and be filmed by a normal person?
     If YES and the only issues are video quality → mark as NOT AI generated
