@@ -79,7 +79,7 @@ Confidence is clamped per verdict so the number never contradicts the label:
 **Backend**
 - Python 3.12 + FastAPI
 - FFmpeg — smart frame extraction (rate adapts to video duration)
-- Google Gemini Vision (`gemini-3-flash-preview`) — frame + transition analysis
+- Google Gemini Vision (`gemini-3.1-pro-preview`) — frame + transition analysis
 - Pillow + NumPy — ELA pixel-level manipulation detection
 - yt-dlp — YouTube and direct URL video downloading
 - Server-Sent Events (SSE) — real-time progress streaming

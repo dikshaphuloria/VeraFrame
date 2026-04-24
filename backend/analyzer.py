@@ -14,7 +14,7 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # ─── Gemini call defaults ──────────────────────────────────────────────────────
-_GEMINI_MODEL        = "gemini-3-flash-preview"
+_GEMINI_MODEL        = "gemini-3.1-pro-preview"
 _MAX_RETRIES         = 3
 _RETRY_BASE_DELAY    = 2.0   # seconds — doubles each retry
 
