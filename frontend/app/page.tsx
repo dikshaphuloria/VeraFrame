@@ -89,7 +89,7 @@ export default function Home() {
             fontWeight: 700,
             fontFamily: "'Instrument Sans', sans-serif",
           }}>
-            VeraFrame · AI Detection
+            Veralyze · AI Detection
           </div>
         </div>
 
@@ -115,7 +115,7 @@ export default function Home() {
           maxWidth: "480px",
           fontFamily: "'Instrument Sans', sans-serif",
         }}>
-          Upload a video, image, or paste a YouTube URL. VeraFrame analyze frames and transitions to detect AI generation.
+          Upload a video, image, or paste a YouTube URL. Veralyze analyze frames and transitions to detect AI generation.
         </p>
       </div>
 

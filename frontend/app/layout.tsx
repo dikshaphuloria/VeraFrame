@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VeraFrame",
+  title: "Veralyze",
   description: "Truth in every frame — AI video and image detection",
 };
 

@@ -17,7 +17,7 @@ from models import MAX_FILE_SIZE, ALLOWED_VIDEO_EXTENSIONS, ALLOWED_IMAGE_EXTENS
 
 load_dotenv()
 
-app = FastAPI(title="VeraFrame API")
+app = FastAPI(title="Veralyze API")
 
 app.add_middleware(
     CORSMiddleware,

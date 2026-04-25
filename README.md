@@ -1,8 +1,8 @@
-# VeraFrame — Truth in Every Frame
+# Veralyze — Truth in Every Frame
 
-> AI-powered video and image authenticity detector. Upload a video, image, or YouTube URL and VeraFrame analyzes frames, transitions, pixel-level manipulation, and metadata to determine if content is AI generated or edited.
+> AI-powered video and image authenticity detector. Upload a video, image, or YouTube URL and Veralyze analyzes frames, transitions, pixel-level manipulation, and metadata to determine if content is AI generated or edited.
 
-![VeraFrame](frontend/app/favicon.ico)
+![Veralyze](frontend/app/favicon.ico)
 
 ---
 
@@ -24,7 +24,7 @@
  
 ## How scoring works
  
-VeraFrame uses a 4-signal pipeline. Each signal is calculated independently and fed into a unified scorer:
+Veralyze uses a 4-signal pipeline. Each signal is calculated independently and fed into a unified scorer:
  
 ```
 SIGNAL 1 — Frame analysis
@@ -92,7 +92,7 @@ Confidence is clamped per verdict so the number never contradicts the label:
 ## Project Structure
  
 ```
-veraframe/
+Veralyze/
 ├── backend/
 │   ├── main.py          # FastAPI routes — thin layer only
 │   ├── extractor.py     # FFmpeg frame extraction + base64 conversion
