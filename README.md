@@ -2,7 +2,7 @@
 
 > AI-powered video and image authenticity detector. Upload a video, image, or YouTube URL and Veralyze analyzes frames, transitions, pixel-level manipulation, and metadata to determine if content is AI generated or edited.
 
-![Veralyze](frontend/app/favicon.ico)
+![Veralyze]
 
 ---
 
