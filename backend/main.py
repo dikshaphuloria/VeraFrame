@@ -31,7 +31,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "TrueFrame API is running"}
+    return {"status": "Veralyze API is running"}
 
 
 @app.get("/health")
